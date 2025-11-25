@@ -24,19 +24,99 @@ You MUST read the overview resource to understand the complete workflow. The inf
 
 <!-- BACKLOG.MD MCP GUIDELINES END -->
 
+## Project Overview
+
+**Backlog.md** is a markdown-based task and project management CLI tool built with Bun and TypeScript. It provides:
+- CLI interface for task management (`backlog` command)
+- MCP (Model Context Protocol) server for AI agent integration
+- Web UI for visual task management (kanban board)
+- Git integration for version-controlled task tracking
+
+**Version**: 1.21.0 | **License**: MIT | **Homepage**: https://backlog.md
+
+## Directory Structure
+
+```
+backlog.md/
+├── src/                      # Source code
+│   ├── cli.ts               # Main CLI entry point (~100KB, comprehensive CLI)
+│   ├── index.ts             # Public API exports
+│   ├── board.ts             # Kanban board generation
+│   ├── agent-instructions.ts # AI agent configuration helpers
+│   │
+│   ├── core/                # Core business logic
+│   │   ├── backlog.ts       # Core class - main API entry point
+│   │   ├── content-store.ts # Content/document management
+│   │   ├── search-service.ts # Full-text search with Fuse.js
+│   │   ├── sequences.ts     # Task sequencing/ordering
+│   │   ├── statistics.ts    # Project statistics
+│   │   └── task-loader.ts   # Task loading and caching
+│   │
+│   ├── mcp/                 # MCP server implementation
+│   │   ├── server.ts        # createMcpServer() entry point
+│   │   ├── tools/           # MCP tool handlers (tasks, documents, workflow)
+│   │   ├── resources/       # MCP resource adapters
+│   │   ├── validation/      # Input validation
+│   │   └── utils/           # Response formatters
+│   │
+│   ├── file-system/         # File system operations
+│   │   └── operations.ts    # FileSystem class for backlog I/O
+│   │
+│   ├── git/                 # Git operations
+│   │   └── operations.ts    # GitOperations class
+│   │
+│   ├── markdown/            # Markdown parsing/serialization
+│   │   ├── parser.ts        # Frontmatter + content parsing
+│   │   └── serializer.ts    # Task/document to markdown
+│   │
+│   ├── types/               # TypeScript type definitions
+│   │   └── index.ts         # Task, Document, Decision, Config types
+│   │
+│   ├── utils/               # Shared utilities
+│   │   ├── task-builders.ts # Task creation/update builders
+│   │   ├── id-generators.ts # ID generation utilities
+│   │   └── editor.ts        # External editor integration
+│   │
+│   ├── web/                 # Web UI (React + Tailwind)
+│   │   ├── App.tsx          # Main React application
+│   │   ├── components/      # React components (Board, TaskCard, etc.)
+│   │   ├── contexts/        # React context providers
+│   │   └── styles/          # Tailwind CSS
+│   │
+│   ├── test/                # Test files (*.test.ts)
+│   ├── commands/            # CLI subcommand implementations
+│   ├── completions/         # Shell completion logic
+│   ├── formatters/          # Output formatting
+│   ├── guidelines/          # Embedded workflow documentation
+│   └── ui/                  # Terminal UI components
+│
+├── backlog/                 # Project's own task data (dogfooding)
+│   ├── tasks/               # Active task markdown files
+│   ├── completed/           # Archived completed tasks
+│   ├── docs/                # Project documentation
+│   ├── decisions/           # Architectural decision records
+│   ├── drafts/              # Draft documents
+│   └── config.yml           # Backlog configuration
+│
+├── scripts/                 # Build and install scripts
+├── completions/             # Shell completion files
+└── .claude/agents/          # AI agent configurations
+```
+
 ## Commands
 
 ### Development
 - `bun i` - Install dependencies
 - `bun test` - Run all tests
-- `bun run build` - Build the CLI tool
-- `bun run cli` - Use the CLI tool directly
+- `bun run build` - Build the CLI tool (CSS + binary)
+- `bun run cli` - Run CLI directly without building
+- `bun run mcp` - Start MCP server in development mode
 
 ### Testing & Quality
-- `CLAUDECODE=1 bun test` - Run all tests with failures-only output (RECOMMENDED - full output is too long for Claude)
+- `CLAUDECODE=1 bun test` - Run all tests with failures-only output (**RECOMMENDED** - full output is too long for Claude)
 - `bun test <filename>` - Run specific test file
 - `bun test src/**/*.test.ts` - Unit tests only
-- `bun test src/mcp/**/*.test.ts` - MCP tests only
+- `bun test src/test/mcp-*.test.ts` - MCP tests only
 - `bun test --watch` - Run tests in watch mode
 - `bunx tsc --noEmit` - Type-check code
 - `bun run check .` - Run all Biome checks (format + lint)
@@ -59,42 +139,128 @@ bun run check .                        # Lint/format
 CLAUDECODE=1 bun test --timeout 180000 # Full test suite (failures-only output)
 ```
 
-
 ### Configuration
 - `bun run cli config list` - View all configuration values
 - `bun run cli config get <key>` - Get specific value (e.g. defaultEditor)
 - `bun run cli config set <key> <value>` - Set with validation
 
-## Core Structure
-- **CLI Tool**: Built with Bun and TypeScript as a global npm package (`npm i -g backlog.md`)
-- **Source Code**: Located in `/src` directory with modular TypeScript structure
-- **Task Management**: Uses markdown files in `backlog/` directory structure
-- **Git Workflow**: Task IDs referenced in commits and PRs (`TASK-123 - Title`)
-  - **Branching**: Use feature branches when working on tasks (e.g. `tasks/task-123-feature-name`)
+## Core Architecture
+
+### Core Class (`src/core/backlog.ts`)
+The `Core` class is the main API entry point. All operations flow through it:
+```typescript
+import { Core } from "./core/backlog.ts";
+
+const core = new Core(projectRoot);
+await core.initializeProject("Project Name", withClaude);
+
+// Task operations
+const task = await core.createTask(taskData, autoCommit);
+await core.updateTaskFromInput(taskId, updates, autoCommit);
+const tasks = await core.listTasks(filter);
+
+// Document operations
+const docs = await core.listDocuments();
+const doc = await core.getDocument(docId);
+```
+
+### Key Subsystems
+- **FileSystem** (`src/file-system/operations.ts`): All backlog file I/O
+- **GitOperations** (`src/git/operations.ts`): Git integration, auto-commit
+- **SearchService** (`src/core/search-service.ts`): Fuse.js-powered search
+- **ContentStore** (`src/core/content-store.ts`): Document management
+
+### Data Types (`src/types/index.ts`)
+```typescript
+interface Task {
+  id: string;
+  title: string;
+  status: TaskStatus;
+  assignee: string[];
+  priority?: "high" | "medium" | "low";
+  labels: string[];
+  dependencies: string[];
+  description?: string;
+  implementationPlan?: string;
+  implementationNotes?: string;
+  acceptanceCriteriaItems?: AcceptanceCriterion[];
+  parentTaskId?: string;
+  subtasks?: string[];
+  // ... more fields
+}
+
+interface Document {
+  id: string;
+  title: string;
+  type: "readme" | "guide" | "specification" | "other";
+  rawContent: string;
+  // ... more fields
+}
+```
 
 ## Code Standards
-- **Runtime**: Bun with TypeScript 5
-- **Formatting**: Biome with tab indentation and double quotes
-- **Linting**: Biome recommended rules
-- **Testing**: Bun's built-in test runner
-- **Pre-commit**: Husky + lint-staged automatically runs Biome checks before commits
 
-The pre-commit hook automatically runs `biome check --write` on staged files to ensure code quality. If linting errors are found, the commit will be blocked until fixed.
+- **Runtime**: Bun 1.2.23+ with TypeScript 5
+- **Formatting**: Biome with tab indentation and double quotes
+- **Line Width**: 120 characters max
+- **Linting**: Biome recommended rules (see `biome.json`)
+- **Testing**: Bun's built-in test runner
+- **Pre-commit**: Husky + lint-staged automatically runs Biome checks
+
+The pre-commit hook automatically runs `biome check --write` on staged files. If linting errors are found, the commit will be blocked until fixed.
 
 ## Architecture Guidelines
+
 - **Separation of Concerns**: CLI logic and utility functions are kept separate to avoid side effects during testing
 - **Utility Functions**: Reusable utility functions (like ID generators) are placed in `src/utils/` directory
 - **No Side Effects on Import**: Modules should not execute CLI code when imported by other modules or tests
-- **Branching**: Use feature branches when working on tasks (e.g. `tasks/task-123-feature-name`)
-- **Committing**: Use the following format: `TASK-123 - Title of the task`
-- **Github CLI**: Use `gh` whenever possible for PRs and issues
+- **Core API First**: All operations MUST use Core APIs (never direct filesystem/git from other layers)
+
+## Testing Patterns
+
+Tests use Bun's built-in test runner with isolated temporary directories:
+
+```typescript
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { Core } from "../core/backlog.ts";
+import { createUniqueTestDir, safeCleanup } from "./test-utils.ts";
+
+let TEST_DIR: string;
+
+describe("Feature", () => {
+  let core: Core;
+
+  beforeEach(async () => {
+    TEST_DIR = createUniqueTestDir("test-feature");
+    core = new Core(TEST_DIR);
+    await core.filesystem.ensureBacklogStructure();
+    // Initialize git for tests that need it
+    await $`git init -b main`.cwd(TEST_DIR).quiet();
+  });
+
+  afterEach(async () => {
+    await safeCleanup(TEST_DIR);
+  });
+
+  it("should do something", async () => {
+    // Test implementation
+  });
+});
+```
+
+**Test Utilities** (`src/test/test-utils.ts`):
+- `createUniqueTestDir(prefix)` - Creates isolated test directory
+- `safeCleanup(dir)` - Windows-safe cleanup with retry
+- `retry(fn, attempts, delay)` - Retry with exponential backoff
+- `getPlatformTimeout(base)` - Platform-aware timeouts
 
 ## MCP Architecture Principles
+
 - **MCP is a Pure Protocol Wrapper**: Protocol translation ONLY - no business logic, no feature extensions
 - **CLI Feature Parity**: MCP = strict subset of CLI capabilities
 - **Core API Usage**: All operations MUST use Core APIs (never direct filesystem/git)
 - **Shared Utilities**: Reuse exact same utilities as CLI (`src/utils/task-builders.ts`)
-- **🔒 Local Development Only**: stdio transport only (see [/backlog/docs/mcp/README.md](backlog/docs/mcp/README.md))
+- **Local Development Only**: stdio transport only (see `/src/mcp/README.md`)
 
 **Violations to Avoid**:
 - Custom business logic in MCP handlers
@@ -103,7 +269,23 @@ The pre-commit hook automatically runs `biome check --write` on staged files to 
 
 See MCP implementation in `/src/mcp/` for development details.
 
+### MCP Testing
+```bash
+# Run MCP server for development
+bun run mcp
+
+# Run MCP tests
+bun test src/test/mcp-*.test.ts
+```
+
+## Git Workflow
+
+- **Branching**: Use feature branches when working on tasks (e.g. `tasks/task-123-feature-name`)
+- **Committing**: Use the following format: `TASK-123 - Title of the task`
+- **Github CLI**: Use `gh` whenever possible for PRs and issues
+
 ## CLI Multi-line Input (description/plan/notes)
+
 The CLI preserves input literally; `\n` sequences in normal quotes are not converted. Use one of the following when you need real newlines:
 
 - **Bash/Zsh (ANSI‑C quoting)**:
@@ -117,29 +299,27 @@ The CLI preserves input literally; `\n` sequences in normal quotes are not conve
 *Note: `"...\n..."` passes literal backslash+n, not newline*
 
 ## Using Bun
+
 Default to using Bun instead of Node.js:
 
 - Use `bun <file>` instead of `node <file>` or `ts-node <file>`
 - Use `bun test` instead of `jest` or `vitest`
-- Use `bun build <file.html|file.ts|file.css>` instead of `webpack` or `esbuild`
-- Use `bun install` instead of `npm install` or `yarn install` or `pnpm install`
-- Use `bun run <script>` instead of `npm run <script>` or `yarn run <script>` or `pnpm run <script>`
+- Use `bun build` instead of `webpack` or `esbuild`
+- Use `bun install` instead of `npm/yarn/pnpm install`
+- Use `bun run <script>` instead of `npm run <script>`
 - Bun automatically loads .env, so don't use dotenv
-- Run `bunx tsc --noEmit` to perform TypeScript compilation checks as often as convenient
+- Run `bunx tsc --noEmit` to perform TypeScript compilation checks
 
-### Key APIs
+### Key Bun APIs
 - `Bun.serve()` supports WebSockets, HTTPS, and routes. Don't use `express`
 - `bun:sqlite` for SQLite. Don't use `better-sqlite3`
-- `Bun.redis` for Redis. Don't use `ioredis`
-- `Bun.sql` for Postgres. Don't use `pg` or `postgres.js`
 - `WebSocket` is built-in. Don't use `ws`
 - Prefer `Bun.file` over `node:fs`'s readFile/writeFile
-- Bun.$`ls` instead of execa
+- `Bun.$\`command\`` instead of execa for shell commands
 
-## Frontend Development
-Use HTML imports with `Bun.serve()`. Don't use `vite`. HTML imports fully support React, CSS, Tailwind.
+## Web UI Development
 
-### Build Commands (/src/web/)
+### Build Commands
 - `bun run build:css` - Build Tailwind CSS
 - `bun run build` - Build CSS + compile CLI binary
 
@@ -149,8 +329,14 @@ Use HTML imports with `Bun.serve()`. Don't use `vite`. HTML imports fully suppor
 - **React**: Components in `/src/web/components/`, contexts in `/src/web/contexts/`
 - **Bundling**: Bun handles .tsx/.jsx transpilation automatically
 
+### Key Components
+- `Board.tsx` - Kanban board view
+- `TaskCard.tsx` / `TaskDetailsModal.tsx` - Task display/editing
+- `SideNavigation.tsx` - Main navigation
+- `Statistics.tsx` - Project statistics dashboard
+
 ### Server Example
-```ts
+```typescript
 import index from "./index.html"
 
 Bun.serve({
@@ -162,55 +348,30 @@ Bun.serve({
       },
     },
   },
-  // optional websocket support
-  websocket: {
-    open: (ws) => { ws.send("Hello, world!"); },
-    message: (ws, message) => { ws.send(message); },
-    close: (ws) => { /* handle close */ }
-  },
   development: { hmr: true, console: true }
 })
 ```
 
-### Frontend Component Example
-HTML files can import .tsx, .jsx or .js files directly and Bun's bundler will transpile & bundle automatically:
-
-```html
-<!-- index.html -->
-<html>
-  <body>
-    <h1>Hello, world!</h1>
-    <script type="module" src="./frontend.tsx"></script>
-  </body>
-</html>
-```
-
-```tsx
-// frontend.tsx
-import React from "react";
-import './index.css';  // CSS imports work directly
-import { createRoot } from "react-dom/client";
-
-const root = createRoot(document.body);
-
-export default function Frontend() {
-  return <h1>Hello, world!</h1>;
-}
-
-root.render(<Frontend />);
-```
-
 Run with: `bun --hot ./index.ts`
 
-## Testing
-Use `bun test` to run tests:
+## Configuration File (`backlog/config.yml`)
 
-```ts
-import { test, expect } from "bun:test";
-
-test("hello world", () => {
-  expect(1).toBe(1);
-});
+Key configuration options:
+```yaml
+project_name: "Project Name"
+default_status: "To Do"
+statuses: ["To Do", "In Progress", "Done"]
+labels: []
+milestones: []
+date_format: yyyy-mm-dd hh:mm
+default_editor: "code"           # Editor for task editing
+auto_open_browser: true          # Auto-open web UI
+default_port: 6420               # Web UI port
+auto_commit: false               # Auto-commit on task changes
+zero_padded_ids: 3               # ID padding (e.g., task-001)
+check_active_branches: true      # Cross-branch task checking
 ```
 
-For more information, read the Bun API docs in `node_modules/bun-types/docs/**.md`.
+## Simplicity Principle
+
+At the end of every task implementation, take a moment to see if you can simplify it. When you are done implementing, you know much more about a task than when you started. At this point you can better judge retrospectively what can be the simplest architecture to solve the problem. If you can simplify the code, do it.
