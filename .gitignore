@@ -40,9 +40,11 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # Claude Code session data
 .claude
-# But include the agents directory
+# But include the agents and skills directories
 !.claude/agents
 !.claude/agents/**
+!.claude/skills
+!.claude/skills/**
 
 # Example project folder
 example-project/
